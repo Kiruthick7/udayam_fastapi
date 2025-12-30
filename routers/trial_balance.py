@@ -62,6 +62,8 @@ def get_trial_balance(
 
                 for result in cursor.stored_results():
                     for row in result.fetchall():
+                        print(row);
+
                         category = row.get("category")
                         amount = float(row.get("amount") or 0)
                         acc_type = row.get("type")
