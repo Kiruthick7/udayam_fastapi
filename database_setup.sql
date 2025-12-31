@@ -35,6 +35,17 @@ CREATE INDEX idx_prcusmas_bank ON PRCUSMAS (GRPCOD, TPLCOD, CUSCOD);
 -- STKMAS
 CREATE INDEX idx_stkmas_root ON STKMAS (ROOT);
 
+-- PAYATTEND
+CREATE INDEX idx_payattend_cuscod_date ON PAYATTEND (CUSCOD, DATE);
+
+-- PAYSTAFFMAS
+CREATE INDEX idx_paystaffmas_type_dor ON PAYSTAFFMAS (CUSTYP, DOR);
+
+-- STOCK
+CREATE INDEX idx_prstkm_itec ON PRSTKMAS (ITEC);
+CREATE INDEX idx_prpurdet_itec ON PRPURDET (ITEC);
+CREATE INDEX idx_prsaldet_itec ON PRSALDET (ITEC);
+CREATE INDEX idx_prpackstru_itec ON PRPACKSTRU (ITEC, PITEC);
 
 -- Step 2: Create users table for app authentication
 CREATE TABLE IF NOT EXISTS USERS4_CHECK (
@@ -43,6 +54,15 @@ CREATE TABLE IF NOT EXISTS USERS4_CHECK (
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create PAYDATMAS table for salary calculations
+CREATE TABLE IF NOT EXISTS PAYDATMAS (
+    `date` DATE NOT NULL,
+    cday VARCHAR(10) NOT NULL,
+    sel VARCHAR(10) DEFAULT '',
+    deleted VARCHAR(10) DEFAULT '',
+    PRIMARY KEY (`date`)
 );
 
 -- Insert test user (password: 'password')
@@ -70,6 +90,7 @@ CREATE PROCEDURE get_trial_balance_shop (
     IN p_end_date DATE
 )
 BEGIN
+    DECLARE v_salary_balance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_supplier_balance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_customer_balance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_arul_cash_balance DECIMAL(15,2) DEFAULT 0;
@@ -78,47 +99,125 @@ BEGIN
     DECLARE v_main_advance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_salary_advance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_rr_closing_stock DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_prod_closing_stock DECIMAL(15,2) DEFAULT 0;
     DECLARE v_bank_liability_total DECIMAL(15,2) DEFAULT 0;
     DECLARE v_bank_asset_total DECIMAL(15,2) DEFAULT 0;
     DECLARE v_liability_total DECIMAL(15,2) DEFAULT 0;
     DECLARE v_assets_total DECIMAL(15,2) DEFAULT 0;
     DECLARE v_net_total DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_today DATE;
+    DECLARE v_mfdate DATE;
+    DECLARE v_msdate1 DATE;
+    DECLARE v_msdate2 DATE;
+    DECLARE v_workdays INT DEFAULT 0;
+    DECLARE v_loop_date DATE;
+    DECLARE v_cday VARCHAR(10);
+
+    /* ===============================
+       SALARY BALANCE (SUN01)
+       =============================== */
+    SET v_today = CURDATE();
+
+    IF MONTH(v_today) = 1 THEN
+        SET v_mfdate = STR_TO_DATE(
+            CONCAT('26-12-', YEAR(v_today) - 1),
+            '%d-%m-%Y'
+        );
+    ELSE
+        SET v_mfdate = STR_TO_DATE(
+            CONCAT(
+                '26-',
+                LPAD(MONTH(v_today) - 1, 2, '0'),
+                '-',
+                YEAR(v_today)
+            ),
+            '%d-%m-%Y'
+        );
+    END IF;
+
+    SET v_loop_date = v_mfdate;
+
+    TRUNCATE TABLE PAYDATMAS;
+
+    WHILE v_loop_date <= v_today DO
+        SET v_cday = UPPER(LEFT(DAYNAME(v_loop_date), 3));
+
+        INSERT INTO PAYDATMAS (`date`, `cday`, `sel`, `deleted`)
+        VALUES (
+            v_loop_date,
+            v_cday,
+            IF(v_cday = 'SUN', 'S', ''),
+            ''
+        );
+
+        SET v_loop_date = DATE_ADD(v_loop_date, INTERVAL 1 DAY);
+    END WHILE;
 
 
-    -- ===============================
-    -- SALARY BALANCE AMOUNT (SUN01)
-    -- ===============================
+    SET v_msdate1 = v_mfdate;
+    SET v_msdate2 = v_today;
+    SET v_workdays = DATEDIFF(v_today, v_mfdate);
 
-
-
-    -- ===============================
-    -- ALL SUPPLIERS BALANCE (SUN01)
-    -- ===============================
     SELECT
-        COALESCE(SUM(
-            CASE
-                WHEN DBCR='C' THEN TRNAMT
-                WHEN DBCR='D' THEN -TRNAMT
-            END
-        ),0)
+    COALESCE(
+        SUM(
+            CEILING((ps.salary / 26) * v_workdays)
+          - CEILING((ps.salary / 26) * COALESCE(att.total_days, 0))
+        ),
+        0
+    ) INTO v_salary_balance
+    FROM PAYSTAFFMAS ps
+    LEFT JOIN (
+        SELECT
+            cuscod,
+            SUM(day_value) AS total_days
+        FROM (
+            SELECT
+                pa.cuscod,
+                pa.date,
+                MAX(
+                    CASE
+                        WHEN pa.ldays = 'F' THEN 1
+                        WHEN pa.ldays IN ('P','A') THEN 0.5
+                        ELSE 0
+                    END
+                ) AS day_value
+            FROM PAYATTEND pa
+            JOIN PAYDATMAS pd
+                ON pa.date = pd.date
+            WHERE pd.sel <> 'S'
+            GROUP BY pa.cuscod, pa.date
+        ) x
+        GROUP BY cuscod
+    ) att ON att.cuscod = ps.cuscod
+    WHERE ps.custyp = 'S'
+    AND (ps.dor = '0000-00-00' OR ps.dor IS NULL);
+
+    /* ===============================
+       SUPPLIERS
+       =============================== */
+    SELECT COALESCE(SUM(
+        CASE WHEN DBCR='C' THEN TRNAMT ELSE -TRNAMT END
+    ),0)
     INTO v_supplier_balance
     FROM DAYBUK
-    WHERE GRPCOD = p_scgrpcod
-    AND TRNDAT >= p_start_date;
+    WHERE GRPCOD=p_scgrpcod
+      AND TRNDAT>=p_start_date;
 
-    -- ====================================
-    -- ALL CUSTOMERS BALANCE
-    -- ====================================
-    SELECT
-        COALESCE(SUM(CASE WHEN DBCR='D' THEN TRNAMT ELSE -TRNAMT END),0)
+    /* ===============================
+       CUSTOMERS
+       =============================== */
+    SELECT COALESCE(SUM(
+        CASE WHEN DBCR='D' THEN TRNAMT ELSE -TRNAMT END
+    ),0)
     INTO v_customer_balance
     FROM DAYBUK
-    WHERE GRPCOD = p_sdgrpcod
-      AND TRNDAT >= p_start_date;
+    WHERE GRPCOD=p_sdgrpcod
+      AND TRNDAT>=p_start_date;
 
-    -- ====================================
-    -- ARUL CASH BALANCE
-    -- ====================================
+    /* ===============================
+       CASH
+       =============================== */
     SELECT COALESCE(SUM(CASE WHEN DBCR='D' THEN TRNAMT ELSE -TRNAMT END),0)
     INTO v_arul_cash_balance
     FROM DAYBUK
@@ -126,18 +225,12 @@ BEGIN
       AND TRNTYP NOT IN ('4','5')
       AND TRNDAT BETWEEN p_start_date AND p_end_date;
 
-    -- ====================================
-    -- GHEETA CASH BALANCE
-    -- ====================================
     SELECT COALESCE(SUM(CASE WHEN DBCR='D' THEN TRNAMT ELSE -TRNAMT END),0)
     INTO v_gheeta_cash_balance
     FROM DAYBUK
     WHERE CUSCOD='CAS01' AND ABC3='PRO01'
       AND TRNDAT BETWEEN p_start_date AND p_end_date;
 
-    -- ====================================
-    -- VIJAY CASH BALANCE
-    -- ====================================
     SELECT COALESCE(SUM(CASE WHEN DBCR='D' THEN TRNAMT ELSE -TRNAMT END),0)
     INTO v_vijay_cash_balance
     FROM DAYBUK
@@ -176,7 +269,7 @@ BEGIN
         )
     INTO v_salary_advance
     FROM DAYBUK
-    WHERE TRNDAT>=p_start_date AND TRNDAT<=p_end_date;
+    WHERE TRNDAT BETWEEN v_msdate1 AND v_msdate2;
 
     -- ====================================
     -- RR CLOSING STOCK VALUE
@@ -187,18 +280,41 @@ BEGIN
     INTO v_rr_closing_stock
     FROM STKMAS;
 
-    -- ===============================
-    -- PRODUCTION CLOSING STOCK VALUE
-    -- ===============================
+    /* ===============================
+       PRODUCTION STOCK
+       =============================== */
+    SELECT
+        COALESCE(
+            SUM(
+                (
+                COALESCE(st.OQTY,0)
+                + COALESCE(pu.PUR_QTY,0)
+                - COALESCE(sa.SALE_QTY,0)
+                ) * ia.RATE
+            ),
+            0
+        )
+    INTO v_prod_closing_stock
+    FROM PRITEMAS ia
+    LEFT JOIN PRSTKMAS st ON st.ITEC = ia.ITEC
+    LEFT JOIN (
+        SELECT ITEC, SUM(QTY) AS PUR_QTY
+        FROM PRPURDET
+        GROUP BY ITEC
+    ) pu ON pu.ITEC = ia.ITEC
+    LEFT JOIN (
+        SELECT
+            ps.ITEC,
+            SUM(sd.QTY * ps.QTY) AS SALE_QTY
+        FROM PRPACKSTRU ps
+        JOIN PRSALDET sd
+            ON sd.ITEC = ps.PITEC
+        GROUP BY ps.ITEC
+    ) sa ON sa.ITEC = ia.ITEC;
 
-
-    -- ===============================
-    -- TOTAL CALCULATIONS
-    -- ===============================
-
-    -- ===============================
-    -- BANK LIABILITY TOTAL
-    -- ===============================
+    /* ===============================
+       BANK TOTALS
+       =============================== */
     SELECT COALESCE(SUM(
         CASE
             WHEN d.DBCR='C' THEN d.TRNAMT
@@ -212,9 +328,6 @@ BEGIN
     AND p.TPLCOD='L'
     AND d.TRNDAT BETWEEN p_start_date AND p_end_date;
 
-    -- ===============================
-    -- BANK ASSET TOTAL
-    -- ===============================
     SELECT COALESCE(SUM(
         CASE
             WHEN d.DBCR='D' THEN d.TRNAMT
@@ -228,35 +341,34 @@ BEGIN
     AND p.TPLCOD='A'
     AND d.TRNDAT BETWEEN p_start_date AND p_end_date;
 
+    /* ===============================
+       TOTALS
+       =============================== */
+    SET v_liability_total =
+          v_supplier_balance
+        + v_bank_liability_total
+        + v_salary_balance;
 
-    -- ===============================
-    -- LIABILITY CALCULATION
-    -- ===============================
-    SET v_liability_total = v_supplier_balance + v_bank_liability_total;
-
-    -- ===============================
-    -- ASSETS CALCULATION
-    -- ===============================
     SET v_assets_total =
-        v_customer_balance
+          v_customer_balance
         + v_arul_cash_balance
         + v_gheeta_cash_balance
         + v_vijay_cash_balance
         + v_main_advance
         + v_salary_advance
         + v_rr_closing_stock
+        + v_prod_closing_stock
         + v_bank_asset_total;
 
-    -- ===============================
-    -- NET TOTAL CALCULATION
-    -- ===============================
     SET v_net_total = v_assets_total - v_liability_total;
 
-    -- ===============================
+ -- ===============================
     -- FINAL RESULT SET
     -- ===============================
 
     SELECT 'ALL SUPPLIERS BALANCE'    AS category, v_supplier_balance as amount, 'LIABILITY' AS type
+    UNION ALL
+    SELECT 'SALARY BALANCE AMOUNT', v_salary_balance, 'LIABILITY'
 
     -- ===============================
     -- LIST ALL BANKS (LIABILITY)
@@ -324,6 +436,8 @@ BEGIN
     UNION ALL
     SELECT 'RR CLOSING STOCK VALUE', v_rr_closing_stock, 'ASSET'
     UNION ALL
+    SELECT 'PRODUCTION CLOSING STOCK VALUE', v_prod_closing_stock, 'ASSET'
+    UNION ALL
     SELECT 'TOTAL ASSETS', v_assets_total, 'ASSET'
     UNION ALL
     SELECT 'NET TOTAL', v_net_total, 'NET';
@@ -331,7 +445,6 @@ BEGIN
 END $$
 
 DELIMITER ;
-
 
 -- Step 4: Create stored procedure for trial balance store calculation
 

@@ -7,7 +7,6 @@ from database import get_db
 
 router = APIRouter(prefix="/api", tags=["trial-balance"])
 
-
 class TrialBalanceRequest(BaseModel):
     companyIds: List[str]  # Company codes as strings
     startDate: date
@@ -59,6 +58,9 @@ def get_trial_balance(
                     "get_trial_balance_shop",
                     [company_code, scgrpcod, sdgrpcod, request.startDate, request.endDate]
                 )
+
+                # Commit the transaction to persist TRUNCATE/INSERT operations
+                conn.commit()
 
                 for result in cursor.stored_results():
                     for row in result.fetchall():
