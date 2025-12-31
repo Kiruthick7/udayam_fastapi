@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 from datetime import date
 from database import get_db
-from auth import verify_token # type: ignore
+# from auth import verify_token # type: ignore
 
 router = APIRouter(prefix="/api", tags=["trial-balance"])
 

@@ -155,7 +155,29 @@ BEGIN
 
 
     SET v_msdate1 = v_mfdate;
-    SET v_msdate2 = v_today;
+
+    IF MONTH(v_mfdate) = 1 THEN
+        SET v_msdate2 = STR_TO_DATE(
+            CONCAT('25-02-', YEAR(v_mfdate)),
+            '%d-%m-%Y'
+        );
+    ELSEIF MONTH(v_mfdate) = 12 THEN
+        SET v_msdate2 = STR_TO_DATE(
+            CONCAT('25-01-', YEAR(v_mfdate) + 1),
+            '%d-%m-%Y'
+        );
+    ELSE
+        SET v_msdate2 = STR_TO_DATE(
+            CONCAT(
+                '25-',
+                LPAD(MONTH(v_mfdate) + 1, 2, '0'),
+                '-',
+                YEAR(v_mfdate)
+            ),
+            '%d-%m-%Y'
+        );
+    END IF;
+
     SET v_workdays = DATEDIFF(v_today, v_mfdate);
 
     SELECT

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List
 from database import get_db
-from auth import verify_token # type: ignore
+# from auth import verify_token # type: ignore
 
 router = APIRouter(prefix="/api", tags=["companies"])
 
@@ -15,29 +15,12 @@ class Company(BaseModel):
     SDGRPCOD: str
 
 @router.get("/companies", response_model=List[Company])
-def get_companies(current_user: dict = Depends(verify_token)):
-# def get_companies():
+# def get_companies(current_user: dict = Depends(verify_token)):
+def get_companies():
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
 
     try:
-        # Get distinct companies from INVOCE table
-        # query = """
-        #     SELECT DISTINCT
-        #         ROW_NUMBER() OVER (ORDER BY i.comp) as id,
-        #         i.comp as code,
-        #         COALESCE(
-        #             (SELECT p.cusnam FROM PRCUSMAS p WHERE p.cuscod = i.comp LIMIT 1),
-        #             i.comp
-        #         ) as name
-        #     FROM INVOCE i
-        #     WHERE i.comp IS NOT NULL AND i.comp != ''
-        #     ORDER BY i.comp
-        # """
-        # query= """
-        #     SELECT * FROM FIRMASN;
-        # """
-
         query = """
             SELECT
                 SNO_ID,
