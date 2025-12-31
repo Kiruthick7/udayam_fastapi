@@ -74,11 +74,11 @@ def get_trial_balance(
                             debit = amount
                             balance = amount
                         elif acc_type == "LIABILITY":
-                            credit = abs(amount)
+                            credit = amount
                             if category == "NET TOTAL":
                                 balance = -abs(amount)
                             else:
-                                balance = abs(amount)
+                                balance = amount
                         elif acc_type == "NET":
                             if amount >= 0:
                                 balance = amount   # Profit
