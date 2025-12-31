@@ -21,7 +21,7 @@ def login(request: LoginRequest, conn=Depends(get_db)):
 
     try:
         cursor.execute(
-            "SELECT id, email, password_hash, role FROM USERS4_CHECK WHERE email = %s",
+            "SELECT id, email, password_hash, role FROM USERS_APP WHERE email = %s",
             (request.email,)
         )
         user = cursor.fetchone()

@@ -48,7 +48,7 @@ CREATE INDEX idx_prsaldet_itec ON PRSALDET (ITEC);
 CREATE INDEX idx_prpackstru_itec ON PRPACKSTRU (ITEC, PITEC);
 
 -- Step 2: Create users table for app authentication
-CREATE TABLE IF NOT EXISTS USERS4_CHECK (
+CREATE TABLE IF NOT EXISTS USERS_APP (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -67,13 +67,13 @@ CREATE TABLE IF NOT EXISTS PAYDATMAS (
 
 -- Insert test user (password: 'password')
 -- Password hash generated with password_gen.py
-INSERT INTO USERS4_CHECK (email, password_hash, role) VALUES
+INSERT INTO USERS_APP (email, password_hash, role) VALUES
 ('admin@example.com',
- '$2b$12$pcssEvP/ykQJ2XFnetlzh.3CFSTlaMPX3JJ/Cch2OI7RbW63PCBEu',
+ '$2b$12$CGzWbcIAmH8137htuWXVgu3A2EdUDSuWaPk23xl41.OquwhWAM4Cu',
  'admin'),
 
 ('user@example.com',
- '$2b$12$Q1HtCV6K3AxtAOmfGnFYDO72Ef4XrW25eWBDyta3PpbF0yPvUmAKC',
+ '$2b$12$6Yvm.5Q8XHRxIa4ORpjSMO6nSRocW5Rf7zjZCA0O2xfziYt61uw4q',
  'user');
 
 -- Step 3: Create stored procedure for trial balance calculation
