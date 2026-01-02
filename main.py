@@ -1,6 +1,6 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, companies, trial_balance_store, trial_balance
+from fastapi import FastAPI, Request, Response
+from routers import auth, companies, trial_balance_store, trial_balance, logout, sales_details
+from mangum import Mangum
 
 app = FastAPI(
     title="Trial Balance API",
@@ -8,21 +8,29 @@ app = FastAPI(
     version="1.0.0"
 )
 
+handler = Mangum(app, lifespan="off")
+
 # CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.middleware("http")
+async def security_headers_middleware(
+    request: Request,
+    call_next
+):
+    response: Response = await call_next(request)
+
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+
+    return response
 
 # Include routers
 app.include_router(auth.router)
 app.include_router(companies.router)
 app.include_router(trial_balance.router)
 app.include_router(trial_balance_store.router)
-
+app.include_router(sales_details.router)
+app.include_router(logout.router)
 
 @app.get("/")
 def root():
@@ -34,7 +42,8 @@ def root():
             "login": "/auth/login",
             "companies": "/api/companies",
             "trial_balance": "/api/trial-balance",
-            "trial_balance_store": "/api/trial-balance-store"
+            "trial_balance_store": "/api/trial-balance-store",
+            "sales_details": "/api/sales-details"
         }
     }
 

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import List
 from database import get_db
-# from auth import verify_token # type: ignore
+from auth_utils import verify_token # type: ignore
 
 router = APIRouter(prefix="/api", tags=["companies"])
 
@@ -15,8 +15,7 @@ class Company(BaseModel):
     SDGRPCOD: str
 
 @router.get("/companies", response_model=List[Company])
-# def get_companies(current_user: dict = Depends(verify_token)):
-def get_companies():
+def get_companies(current_user: dict = Depends(verify_token)):
     conn = get_db()
     cursor = conn.cursor(dictionary=True)
 

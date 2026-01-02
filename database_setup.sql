@@ -47,6 +47,16 @@ CREATE INDEX idx_prpurdet_itec ON PRPURDET (ITEC);
 CREATE INDEX idx_prsaldet_itec ON PRSALDET (ITEC);
 CREATE INDEX idx_prpackstru_itec ON PRPACKSTRU (ITEC, PITEC);
 
+-- SALTOT
+CREATE INDEX idx_saltot_bill ON SALTOT (DATE, BILLNO, CUSCOD);
+
+-- SALDET
+CREATE INDEX idx_saldet_bill ON SALDET (DATE, BILLNO, CUSCOD);
+
+-- CUSMAS
+CREATE INDEX idx_cusmas_cuscod ON CUSMAS (CUSCOD);
+
+
 -- Step 2: Create users table for app authentication
 CREATE TABLE IF NOT EXISTS USERS_APP (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -64,6 +74,17 @@ CREATE TABLE IF NOT EXISTS PAYDATMAS (
     deleted VARCHAR(10) DEFAULT '',
     PRIMARY KEY (`date`)
 );
+
+-- Create revoked_tokens table for token management
+CREATE TABLE revoked_tokens (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    token_hash VARCHAR(255) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_token_hash ON revoked_tokens(token_hash);
+
 
 -- Insert test user (password: 'password')
 -- Password hash generated with password_gen.py
@@ -611,7 +632,7 @@ BEGIN
     UNION ALL
     SELECT 'INVESTMENT',             v_investment, 'LIABILITY' AS type
     UNION ALL
-    SELECT 'NET PROFIT',             v_net_profit, 'LIABILITY' AS type;
+    SELECT 'NET TOTAL',             v_net_profit, 'LIABILITY' AS type;
 
 END $$
 
@@ -620,3 +641,112 @@ DELIMITER ;
 -- Test the stored procedure
 -- Replace 'SHOP1' with your actual company code
 -- CALL get_trial_balance_shop('SHOP1', '2023-04-01', '2024-03-31');
+
+-- Step 5: Create stored procedure for customer detials of current day sales details
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS get_customer_sales_details $$
+
+CREATE PROCEDURE get_customer_sales_details ()
+BEGIN
+    SELECT
+        s.DATE,
+        s.BILLNO,
+        s.SNO,
+        s.CUSCOD,
+        s.TQTY,
+        c.CUSNAM,
+        c.ADRONE,
+        c.ADRTWO,
+        c.PHONE,
+        s.NET
+    FROM SALTOT s
+    LEFT JOIN CUSMAS c
+        ON c.CUSCOD = s.CUSCOD
+    WHERE s.DATE = CURDATE()
+    ORDER BY s.SNO_ID DESC;
+END $$
+
+DELIMITER ;
+
+CALL get_customer_sales_details();
+
+-- Step 6: Create stored procedure for customer detials & item details of current day sales details
+
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS get_customer_sales_full_details $$
+
+CREATE PROCEDURE get_customer_sales_full_details (
+    IN p_date   DATE,
+    IN p_billno INT,
+    IN p_cuscod VARCHAR(5)
+)
+BEGIN
+    SELECT
+        -- Bill header
+        t.DATE,
+        t.BILLNO,
+        t.SNO,
+        t.CUSCOD,
+
+        -- Customer
+        c.CUSNAM,
+        c.ADRONE,
+        c.ADRTWO,
+        c.PHONE,
+
+        -- Salesman (actual bill salesman)
+        sm.SALMANNAM,
+        sm.SALMANPHON,
+
+        -- Manager (fixed – always ARUL via code)
+        mgr.SALMANNAM     AS MANAGERNAME,
+        mgr.SALMANPHON    AS MANAGERPHON,
+
+        -- Item details
+        d.NAME,
+        d.RATE,
+        d.QTY,
+        d.TPRICE,
+        d.PRCOSTRATE,
+        ((d.RATE - d.PRCOSTRATE) * d.QTY) AS PROFIT_LOSS,
+
+        -- Totals
+        t.TQTY,
+        t.NET
+    FROM SALTOT t
+
+    -- Customer
+    LEFT JOIN CUSMAS c
+        ON c.CUSCOD = t.CUSCOD
+
+    -- Salesman
+    LEFT JOIN SALMANMAS sm
+        ON sm.SALMANCOD = t.SMANCOD
+
+    -- Manager (fixed code) - Use CROSS JOIN with LIMIT 1 to avoid cartesian product
+    LEFT JOIN (
+        SELECT SALMANNAM, SALMANPHON
+        FROM SALMANMAS
+        WHERE SALMANCOD = 'BHA01'
+        LIMIT 1
+    ) mgr ON 1=1
+
+    -- Items
+    JOIN SALDET d
+        ON d.DATE   = t.DATE
+    AND d.BILLNO = t.BILLNO
+    AND d.CUSCOD = t.CUSCOD
+
+    WHERE t.DATE   = p_date
+    AND t.BILLNO = p_billno
+    AND t.CUSCOD = p_cuscod
+
+    ORDER BY d.SNO_ID ASC;
+END $$
+
+DELIMITER ;
+
+-- CALL get_customer_sales_full_details('2026-01-01', 26207, 'B0020');

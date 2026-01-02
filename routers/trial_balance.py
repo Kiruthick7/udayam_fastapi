@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List
 from datetime import date
 from database import get_db
-# from auth import verify_token # type: ignore
+from auth_utils import verify_token # type: ignore
 
 router = APIRouter(prefix="/api", tags=["trial-balance"])
 
@@ -29,6 +29,7 @@ class CompanyReport(BaseModel):
 @router.post("/trial-balance")
 def get_trial_balance(
     request: TrialBalanceRequest,
+    current_user: dict = Depends(verify_token)
 ):
     conn = get_db()
     companies_data = []

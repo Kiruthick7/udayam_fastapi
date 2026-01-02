@@ -1,48 +1,64 @@
 import datetime
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from database import get_db
-from auth import verify_password, create_access_token
+from auth_utils import create_refresh_token, verify_password, create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
 
 class LoginRequest(BaseModel):
     email: str
     password: str
 
 class LoginResponse(BaseModel):
-    token: str
+    access_token: str
+    refresh_token: str
     token_type: str
     user: dict
 
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, conn=Depends(get_db)):
-    cursor = conn.cursor(dictionary=True)
+    cursor = None
 
     try:
+        cursor = conn.cursor(dictionary=True)
+
         cursor.execute(
-            "SELECT id, email, password_hash, role FROM USERS_APP WHERE email = %s",
+            "SELECT id, email, username, password_hash, role FROM USERS_APP WHERE email = %s",
             (request.email,)
         )
+
         user = cursor.fetchone()
 
-        if not user or not verify_password(request.password, user['password_hash']): # type: ignore
+        if not user:
             raise HTTPException(status_code=403, detail="Invalid email or password")
 
-        token = create_access_token({
+        if not verify_password(request.password, user['password_hash']):
+            raise HTTPException(status_code=403, detail="Invalid email or password")
+
+        access_token = create_access_token({
             "user_id": user['id'],
-            "role": user['role'],
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=30)
-        }) # type: ignore
+            "role": user['role']
+        })
 
-        return LoginResponse(
-            token=token,
-            token_type="bearer",
-            user={"id": user['id'], "email": user['email'], "role": user['role']}
-        )
+        refresh_token = create_refresh_token(user['id'])
 
-    except Exception:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user['id'],
+                "email": user['email'],
+                "username": user.get('username', user['email']),
+                "role": user['role']
+            }
+        }
+
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
