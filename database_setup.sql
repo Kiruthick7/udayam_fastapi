@@ -660,7 +660,21 @@ BEGIN
         c.ADRONE,
         c.ADRTWO,
         c.PHONE,
-        s.NET
+        s.NET,
+        COALESCE(
+            (SELECT SUM(CASE WHEN (d.QTY * d.RATE) - (d.QTY * d.PRCOSTRATE) > 0
+                         THEN (d.QTY * d.RATE) - (d.QTY * d.PRCOSTRATE)
+                         ELSE 0 END)
+             FROM SALDET d
+             WHERE d.BILLNO = s.BILLNO AND d.DATE = s.DATE), 0
+        ) AS TOTAL_PROFIT,
+        COALESCE(
+            (SELECT SUM(CASE WHEN (d.QTY * d.RATE) - (d.QTY * d.PRCOSTRATE) < 0
+                         THEN ABS((d.QTY * d.RATE) - (d.QTY * d.PRCOSTRATE))
+                         ELSE 0 END)
+             FROM SALDET d
+             WHERE d.BILLNO = s.BILLNO AND d.DATE = s.DATE), 0
+        ) AS TOTAL_LOSS
     FROM SALTOT s
     LEFT JOIN CUSMAS c
         ON c.CUSCOD = s.CUSCOD

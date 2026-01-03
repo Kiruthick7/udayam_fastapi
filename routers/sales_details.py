@@ -19,6 +19,8 @@ class DailySalesSummary(BaseModel):
     phone: Optional[str] = Field(None, description="Phone number")
     tqty: float = Field(..., description="Total quantity")
     net: float = Field(..., description="Net amount")
+    total_profit: float = Field(default=0.0, description="Total profit for the bill")
+    total_loss: float = Field(default=0.0, description="Total loss for the bill")
 
     class Config:
         json_schema_extra = {
@@ -241,7 +243,9 @@ async def get_daily_sales_summary(token: str = Depends(verify_token)):
                 'adrtwo': row.get('ADRTWO'),
                 'phone': row.get('PHONE'),
                 'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
-                'net': float(row['NET']) if row['NET'] else 0.0
+                'net': float(row['NET']) if row['NET'] else 0.0,
+                'total_profit': float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') else 0.0,
+                'total_loss': float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') else 0.0
             }
             formatted_results.append(formatted_row)
 
