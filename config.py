@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     JWT_SECRET: Optional[str] = None
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     def get_jwt_secret_value(self) -> str:

@@ -750,3 +750,39 @@ END $$
 DELIMITER ;
 
 -- CALL get_customer_sales_full_details('2026-01-01', 26207, 'B0020');
+
+-- Step 7: Create stored procedure for profit and loss calculation of current day sales details
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS get_profit_loss $$
+
+CREATE PROCEDURE get_profit_loss ()
+BEGIN
+    SELECT
+        SUM(
+            CASE
+                WHEN RATE > PRCOSTRATE
+                THEN (COALESCE(RATE,0) - COALESCE(PRCOSTRATE,0)) * COALESCE(QTY,0)
+                ELSE 0
+            END
+        ) AS total_profit,
+
+        SUM(
+            CASE
+                WHEN RATE < PRCOSTRATE
+                THEN (COALESCE(PRCOSTRATE,0) - COALESCE(RATE,0)) * COALESCE(QTY,0)
+                ELSE 0
+            END
+        ) AS total_loss
+    FROM SALDET
+    WHERE `DATE` = CURDATE();
+END $$
+
+DELIMITER ;
+
+-- CALL get_profit_loss();
+
+-- SHOW CURRENT DATE OF IST;
+SELECT DATE(
+    CONVERT_TZ(NOW(), @@session.time_zone, '+05:30')
+) AS current_date_ist;

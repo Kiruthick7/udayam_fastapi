@@ -18,6 +18,12 @@ def create_access_token(data: dict):
         minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
     )
 
+    # Standardize user_id to 'sub' claim
+    if 'user_id' in to_encode:
+        to_encode['sub'] = str(to_encode['user_id'])
+        to_encode['role'] = to_encode.get('role', 'user')
+        del to_encode['user_id']
+
     to_encode.update({
         "exp": expire,
         "type": "access",
@@ -83,9 +89,18 @@ def verify_token(
                 issuer="trial-balance-api"
             )
 
+            # Verify it's an access token
+            if payload.get("type") != "access":
+                raise HTTPException(status_code=401, detail="Invalid token type")
+
             # Return token data with raw token
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="Invalid token - missing user ID")
+
             return {
-                "user_id": payload.get("sub"),
+                "user_id": int(user_id),
+                "role": payload.get("role", "user"),
                 "email": payload.get("email"),
                 "raw_token": token,
                 "payload": payload

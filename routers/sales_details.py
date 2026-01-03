@@ -102,6 +102,20 @@ class SalesDetailRequest(BaseModel):
         }
 
 
+class ProfitLossSummary(BaseModel):
+    """Daily profit and loss summary"""
+    total_profit: float = Field(..., description="Total profit for the day")
+    total_loss: float = Field(..., description="Total loss for the day")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "total_profit": 5000.00,
+                "total_loss": 500.00
+            }
+        }
+
+
 @router.post(
     "/sales-details",
     response_model=List[CustomerSalesDetail],
@@ -237,6 +251,64 @@ async def get_daily_sales_summary(token: str = Depends(verify_token)):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch daily sales summary: {str(e)}"
+        )
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+
+@router.get(
+    "/profit-loss",
+    response_model=ProfitLossSummary,
+    summary="Get Daily Profit and Loss",
+    description="Retrieve profit and loss summary for today's sales"
+)
+async def get_profit_loss(token: str = Depends(verify_token)):
+    """
+    Get profit and loss summary for today's sales.
+
+    Returns:
+    - Total profit for the day
+    - Total loss for the day
+
+    **Requires authentication.**
+    """
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_db()
+        cursor = connection.cursor(dictionary=True)
+
+        # Call stored procedure
+        cursor.callproc('get_profit_loss')
+
+        # Fetch results
+        results = []
+        for result in cursor.stored_results():
+            results = result.fetchall()
+
+        if not results or len(results) == 0:
+            # Return zeros if no data
+            return {
+                'total_profit': 0.0,
+                'total_loss': 0.0
+            }
+
+        row = results[0]
+        formatted_result = {
+            'total_profit': float(row['total_profit']) if row['total_profit'] else 0.0,
+            'total_loss': float(row['total_loss']) if row['total_loss'] else 0.0
+        }
+
+        return formatted_result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch profit/loss data: {str(e)}"
         )
     finally:
         if cursor:
