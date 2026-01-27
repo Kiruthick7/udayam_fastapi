@@ -206,10 +206,13 @@ async def get_sales_details(
 
 
 @router.get("/current-day-customer-sales", response_model=List[DailySalesSummary])
-async def get_daily_sales_summary(token: str = Depends(verify_token)):
+async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depends(verify_token)):
     """
-    Get all sales orders placed today (current date).
+    Get all sales orders for a specific date or current date if not provided.
     Returns a summary list without individual item details.
+
+    Args:
+        date: Optional date in YYYY-MM-DD format. If not provided, uses current date.
     """
     connection = None
     cursor = None
@@ -219,8 +222,8 @@ async def get_daily_sales_summary(token: str = Depends(verify_token)):
         connection = get_db()
         cursor = connection.cursor(dictionary=True)
 
-        # Call stored procedure to get today's sales
-        cursor.callproc('get_customer_sales_details')
+        # Call stored procedure to get sales
+        cursor.callproc('get_customer_sales_details', [date])
 
         # Fetch results from the stored procedure
         results = []
@@ -267,11 +270,14 @@ async def get_daily_sales_summary(token: str = Depends(verify_token)):
     "/profit-loss",
     response_model=ProfitLossSummary,
     summary="Get Daily Profit and Loss",
-    description="Retrieve profit and loss summary for today's sales"
+    description="Retrieve profit and loss summary for a specific date or today's sales"
 )
-async def get_profit_loss(token: str = Depends(verify_token)):
+async def get_profit_loss(date: Optional[str] = None, token: str = Depends(verify_token)):
     """
-    Get profit and loss summary for today's sales.
+    Get profit and loss summary for a specific date or today's sales.
+
+    Args:
+        date: Optional date in YYYY-MM-DD format. If not provided, uses current date.
 
     Returns:
     - Total profit for the day
@@ -286,8 +292,8 @@ async def get_profit_loss(token: str = Depends(verify_token)):
         connection = get_db()
         cursor = connection.cursor(dictionary=True)
 
-        # Call stored procedure
-        cursor.callproc('get_profit_loss')
+        # Call stored procedure with date parameter
+        cursor.callproc('get_profit_loss', [date])
 
         # Fetch results
         results = []

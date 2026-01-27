@@ -648,7 +648,9 @@ DELIMITER $$
 
 DROP PROCEDURE IF EXISTS get_customer_sales_details $$
 
-CREATE PROCEDURE get_customer_sales_details ()
+CREATE PROCEDURE get_customer_sales_details (
+    IN p_date DATE
+)
 BEGIN
     SELECT
         s.DATE,
@@ -678,7 +680,7 @@ BEGIN
     FROM SALTOT s
     LEFT JOIN CUSMAS c
         ON c.CUSCOD = s.CUSCOD
-    WHERE s.DATE = CURDATE()
+    WHERE s.DATE = COALESCE(p_date, CURDATE())
     ORDER BY s.SNO_ID DESC;
 END $$
 
@@ -770,7 +772,9 @@ DELIMITER $$
 
 DROP PROCEDURE IF EXISTS get_profit_loss $$
 
-CREATE PROCEDURE get_profit_loss ()
+CREATE PROCEDURE get_profit_loss (
+    IN p_date DATE
+)
 BEGIN
     SELECT
         SUM(
@@ -789,7 +793,7 @@ BEGIN
             END
         ) AS total_loss
     FROM SALDET
-    WHERE `DATE` = CURDATE();
+    WHERE `DATE` = COALESCE(p_date, CURDATE());
 END $$
 
 DELIMITER ;
