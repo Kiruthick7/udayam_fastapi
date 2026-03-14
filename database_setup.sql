@@ -117,6 +117,8 @@ BEGIN
     DECLARE v_arul_cash_balance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_gheeta_cash_balance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_vijay_cash_balance DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_paper_vijay_cash DECIMAL(15,2) DEFAULT 0;
+    DECLARE v_press_vijay_cash DECIMAL(15,2) DEFAULT 0;
     DECLARE v_main_advance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_salary_advance DECIMAL(15,2) DEFAULT 0;
     DECLARE v_rr_closing_stock DECIMAL(15,2) DEFAULT 0;
@@ -200,6 +202,37 @@ BEGIN
     END IF;
 
     SET v_workdays = DATEDIFF(v_today, v_mfdate);
+
+    /* ===============================
+        VIJAY CASH AT VIJAY SOFTWARE (PAPER & PRESS)
+       =============================== */
+    -- PAPER VIJAY CASH
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN ((TRNTYP='1') OR (TRNTYP='3' AND JRT='1')) AND DBCR='D' THEN TRNAMT
+            WHEN ((TRNTYP='2') OR (TRNTYP='3' AND JRT='2')) AND DBCR='C' THEN -TRNAMT
+            ELSE 0
+        END
+    ),0) INTO v_paper_vijay_cash
+    FROM DAYBUK
+    WHERE ABC3='ACC01'
+      AND COMP='PAP01'
+      AND CUSCOD='CAS01'
+      AND TRNDAT >= p_start_date AND TRNDAT <= p_end_date;
+
+    -- PRESS VIJAY CASH
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN ((TRNTYP='1') OR (TRNTYP='3' AND JRT='1')) AND DBCR='D' THEN TRNAMT
+            WHEN ((TRNTYP='2') OR (TRNTYP='3' AND JRT='2')) AND DBCR='C' THEN -TRNAMT
+            ELSE 0
+        END
+    ),0) INTO v_press_vijay_cash
+    FROM DAYBUK
+    WHERE ABC3='ACC01'
+      AND COMP='PRE01'
+      AND CUSCOD='CAS01'
+      AND TRNDAT >= p_start_date AND TRNDAT <= p_end_date;
 
     SELECT
     COALESCE(
@@ -390,7 +423,9 @@ BEGIN
     SET v_liability_total =
           v_supplier_balance
         + v_bank_liability_total
-        + v_salary_balance;
+        + v_salary_balance
+        + v_paper_vijay_cash
+        + v_press_vijay_cash;
 
     SET v_assets_total =
           v_customer_balance
@@ -412,6 +447,14 @@ BEGIN
     SELECT 'ALL SUPPLIERS BALANCE'    AS category, v_supplier_balance as amount, 'LIABILITY' AS type
     UNION ALL
     SELECT 'SALARY BALANCE AMOUNT', v_salary_balance, 'LIABILITY'
+
+    -- PAPER VIJAY CASH (NET)
+    UNION ALL
+    SELECT 'PAPER VIJAY CASH', v_paper_vijay_cash, 'ASSET'
+
+    -- PRESS VIJAY CASH (NET)
+    UNION ALL
+    SELECT 'PRESS VIJAY CASH', v_press_vijay_cash, 'ASSET'
 
     -- ===============================
     -- LIST ALL BANKS (LIABILITY)
@@ -488,6 +531,8 @@ BEGIN
 END $$
 
 DELIMITER ;
+
+---------------------------------------------------------------------------
 
 -- Step 4: Create stored procedure for trial balance store calculation
 
