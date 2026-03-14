@@ -450,11 +450,11 @@ BEGIN
 
     -- PAPER VIJAY CASH (NET)
     UNION ALL
-    SELECT 'PAPER VIJAY CASH', v_paper_vijay_cash, 'ASSET'
+    SELECT 'PAPER VIJAY CASH', v_paper_vijay_cash, 'LIABILITY'
 
     -- PRESS VIJAY CASH (NET)
     UNION ALL
-    SELECT 'PRESS VIJAY CASH', v_press_vijay_cash, 'ASSET'
+    SELECT 'PRESS VIJAY CASH', v_press_vijay_cash, 'LIABILITY'
 
     -- ===============================
     -- LIST ALL BANKS (LIABILITY)
