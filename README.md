@@ -91,9 +91,11 @@ Once running, visit:
 ### Reports
 - `GET /api/companies` - List all companies (requires auth)
 - `POST /api/trial-balance` - Get trial balance report (requires auth)
-- `POST /api/trial-balance_store` - Get trial balance for stores (requires auth)
-- `POST /api/daily-sales` - Get daily sales summary (requires auth)
-- `POST /api/sales-details` - Get detailed sales for a specific bill (requires auth)
+
+- `POST /api/trial-balance-store` - Get trial balance for stores (requires auth)
+- `POST /api/sales-details` - Get detailed sales for a specific bill, including customer, manager, and salesman info (requires auth)
+- `GET /api/current-day-customer-sales` - Get daily sales summary for all customers (requires auth, optional date param)
+- `GET /api/profit-loss` - Get daily profit and loss summary (requires auth, optional date param)
 
 ### Health Check
 - `GET /health` - API health status
@@ -178,9 +180,10 @@ aws lambda update-function-code \
 - Connection pooling for MySQL
 - Automatic token verification
 - CORS configured for mobile app
-- Daily sales reports with detailed breakdowns
-- Sales detail view with customer information
-- Manager and salesman contact information via stored procedures
+- Daily sales summary and detailed breakdowns (with `/api/current-day-customer-sales` and `/api/sales-details`)
+- Sales detail view with customer, manager, and salesman information
+- Profit and loss summary endpoint (`/api/profit-loss`)
+- Trial balance for stores and companies
 - Comprehensive error handling and validation
 
 ## Security
