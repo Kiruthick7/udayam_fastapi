@@ -12,7 +12,6 @@ class RefreshRequest(BaseModel):
 
 @router.post("/refresh")
 def refresh_token(payload: RefreshRequest, conn=Depends(get_db)):
-    cursor = None
     try:
         decoded = jwt.decode(
             payload.refresh_token,
@@ -26,33 +25,30 @@ def refresh_token(payload: RefreshRequest, conn=Depends(get_db)):
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
         user_id = decoded.get("sub")
-        if not user_id:
+        session_id = decoded.get("session_id")
+        if not user_id or not session_id:
             raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-        # Get user role from database
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT role FROM USERS_APP WHERE id = %s",
-            (int(user_id),)
-        )
-        user = cursor.fetchone()
+        # Get user role and session_id from database
+        with get_db() as conn:
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute(
+                    "SELECT role, session_id FROM USERS_APP WHERE id = %s",
+                    (int(user_id),)
+                )
+                user = cursor.fetchone()
 
-        if not user:
-            raise HTTPException(status_code=401, detail="User not found")
+                if not user or user['session_id'] != session_id:
+                    raise HTTPException(status_code=401, detail="Session invalidated. Please login again.")
 
-        return {
-            "access_token": create_access_token({
-                "user_id": int(user_id),
-                "role": user['role']
-            }),
-            "refresh_token": create_refresh_token(int(user_id)),
-            "token_type": "bearer"
-        }
-
+                return {
+                    "access_token": create_access_token({
+                        "user_id": int(user_id),
+                        "role": user['role'],
+                        "session_id": session_id
+                    }),
+                    "refresh_token": create_refresh_token(int(user_id), session_id),
+                    "token_type": "bearer"
+                }
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()

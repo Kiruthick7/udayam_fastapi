@@ -8,45 +8,42 @@ from config import settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/logout")
-def logout(
-    token_data=Depends(verify_token),
-    conn=Depends(get_db),
-):
-    if conn is None:
-        raise HTTPException(status_code=500, detail="Database connection failed")
-
-    cursor = None
+def logout(token_data=Depends(verify_token)):
     auth_header = token_data.get("raw_token")
     if not auth_header:
         raise HTTPException(status_code=400, detail="Missing token")
 
-    try:
-        cursor = conn.cursor()
+    from database import get_db
+    with get_db() as conn:
+        with conn.cursor() as cursor:
+            decoded = jwt.decode(
+                auth_header,
+                settings.get_jwt_secret_value(),
+                algorithms=[settings.JWT_ALGORITHM],
+                audience="mobile-app",
+                issuer="trial-balance-api",
+            )
 
-        decoded = jwt.decode(
-            auth_header,
-            settings.get_jwt_secret_value(),
-            algorithms=[settings.JWT_ALGORITHM],
-            audience="mobile-app",
-            issuer="trial-balance-api",
-        )
+            exp = datetime.fromtimestamp(decoded["exp"])
+            token_hash = hash_token(auth_header)
 
-        exp = datetime.fromtimestamp(decoded["exp"])
-        token_hash = hash_token(auth_header)
+            # Revoke the token as before
+            cursor.execute(
+                """
+                INSERT INTO revoked_tokens (token_hash, expires_at)
+                VALUES (%s, %s)
+                """,
+                (token_hash, exp),
+            )
 
-        cursor.execute(
-            """
-            INSERT INTO revoked_tokens (token_hash, expires_at)
-            VALUES (%s, %s)
-            """,
-            (token_hash, exp),
-        )
-        conn.commit()
+            # Clear session_id in USERS_APP to fully invalidate the session
+            user_id = decoded.get("sub")
+            if user_id:
+                cursor.execute(
+                    "UPDATE USERS_APP SET session_id = NULL WHERE id = %s",
+                    (int(user_id),)
+                )
 
-        return {"message": "Logged out successfully"}
+            conn.commit()
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    return {"message": "Logged out successfully"}

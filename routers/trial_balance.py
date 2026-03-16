@@ -31,85 +31,76 @@ def get_trial_balance(
     request: TrialBalanceRequest,
     current_user: dict = Depends(verify_token)
 ):
-    conn = get_db()
     companies_data = []
-
     try:
-        for company_code in request.companyIds:
-            cursor = conn.cursor(dictionary=True)
-            rows = []
+        with get_db() as conn:
+            for company_code in request.companyIds:
+                with conn.cursor(dictionary=True) as cursor:
+                    rows = []
+                    # FIRST: Fetch company-specific SCGRPCOD and SDGRPCOD
+                    cursor.execute(
+                        "SELECT FIRNAME, SCGRPCOD, SDGRPCOD FROM FIRMASN WHERE FIRCOD = %s LIMIT 1",
+                        (company_code,)
+                    )
+                    company_info = cursor.fetchone()
 
-            try:
-                # FIRST: Fetch company-specific SCGRPCOD and SDGRPCOD
-                cursor.execute(
-                    "SELECT FIRNAME, SCGRPCOD, SDGRPCOD FROM FIRMASN WHERE FIRCOD = %s LIMIT 1",
-                    (company_code,)
-                )
-                company_info = cursor.fetchone()
+                    if not company_info:
+                        continue  # Skip if company not found
 
-                if not company_info:
-                    continue  # Skip if company not found
+                    company_name = company_info["FIRNAME"]
+                    scgrpcod = company_info["SCGRPCOD"] or ""
+                    sdgrpcod = company_info["SDGRPCOD"] or ""
 
-                company_name = company_info["FIRNAME"]
-                scgrpcod = company_info["SCGRPCOD"] or ""
-                sdgrpcod = company_info["SDGRPCOD"] or ""
+                    # Call stored procedure with company-specific codes
+                    cursor.callproc(
+                        "get_trial_balance_shop",
+                        [company_code, scgrpcod, sdgrpcod, request.startDate, request.endDate]
+                    )
 
-                # Call stored procedure with company-specific codes
-                cursor.callproc(
-                    "get_trial_balance_shop",
-                    [company_code, scgrpcod, sdgrpcod, request.startDate, request.endDate]
-                )
+                    # Commit the transaction to persist TRUNCATE/INSERT operations
+                    conn.commit()
 
-                # Commit the transaction to persist TRUNCATE/INSERT operations
-                conn.commit()
+                    for result in cursor.stored_results():
+                        for row in result.fetchall():
+                            category = row.get("category")
+                            amount = float(row.get("amount") or 0)
+                            acc_type = row.get("type")
 
-                for result in cursor.stored_results():
-                    for row in result.fetchall():
-                        category = row.get("category")
-                        amount = float(row.get("amount") or 0)
-                        acc_type = row.get("type")
+                            debit = credit = balance = 0.0
 
-                        debit = credit = balance = 0.0
-
-                        if acc_type == "ASSET":
-                            debit = amount
-                            balance = amount
-                        elif acc_type == "LIABILITY":
-                            credit = amount
-                            if category == "NET TOTAL":
-                                balance = -abs(amount)
-                            else:
+                            if acc_type == "ASSET":
+                                debit = amount
                                 balance = amount
-                        elif acc_type == "NET":
-                            if amount >= 0:
-                                balance = amount   # Profit
-                            else:
-                                balance = -abs(amount)  # Loss
+                            elif acc_type == "LIABILITY":
+                                credit = amount
+                                if category == "NET TOTAL":
+                                    balance = -abs(amount)
+                                else:
+                                    balance = amount
+                            elif acc_type == "NET":
+                                if amount >= 0:
+                                    balance = amount   # Profit
+                                else:
+                                    balance = -abs(amount)  # Loss
 
-                        rows.append({
-                            "accountName": category,
-                            "accountType": acc_type,
-                            "debit": debit,
-                            "credit": credit,
-                            "balance": balance
-                        })
+                            rows.append({
+                                "accountName": category,
+                                "accountType": acc_type,
+                                "debit": debit,
+                                "credit": credit,
+                                "balance": balance
+                            })
 
-                companies_data.append({
-                    "companyId": company_code,
-                    "companyName": company_name,
-                    "period": {
-                        "start": str(request.startDate),
-                        "end": str(request.endDate)
-                    },
-                    "rows": rows,
-                })
-
-            finally:
-                cursor.close()
+                    companies_data.append({
+                        "companyId": company_code,
+                        "companyName": company_name,
+                        "period": {
+                            "start": str(request.startDate),
+                            "end": str(request.endDate)
+                        },
+                        "rows": rows,
+                    })
 
         return {"companies": companies_data}
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    finally:
-        conn.close()

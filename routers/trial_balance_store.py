@@ -37,10 +37,8 @@ def get_trial_balance(
 
     try:
         for company_code in request.companyIds:
-            cursor = conn.cursor(dictionary=True)
             rows = []
-
-            try:
+            with conn.cursor(dictionary=True) as cursor:
                 cursor.execute(
                     "SELECT FIRNAME, SCGRPCOD, SDGRPCOD FROM FIRMASN WHERE FIRCOD = %s LIMIT 1",
                     (company_code,)
@@ -95,9 +93,6 @@ def get_trial_balance(
                     },
                     "rows": rows,
                 })
-
-            finally:
-                cursor.close()
 
         return {"companies": companies_data}
 

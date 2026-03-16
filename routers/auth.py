@@ -20,45 +20,48 @@ class LoginResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, conn=Depends(get_db)):
-    cursor = None
+    import uuid
+    with get_db() as conn:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                "SELECT id, email, username, password_hash, role, user_id FROM USERS_APP WHERE email = %s",
+                (request.email,)
+            )
 
-    try:
-        cursor = conn.cursor(dictionary=True)
+            user = cursor.fetchone()
 
-        cursor.execute(
-            "SELECT id, email, username, password_hash, role FROM USERS_APP WHERE email = %s",
-            (request.email,)
-        )
+            if not user:
+                raise HTTPException(status_code=403, detail="Invalid email or password")
 
-        user = cursor.fetchone()
+            if not verify_password(request.password, user['password_hash']):
+                raise HTTPException(status_code=403, detail="Invalid email or password")
 
-        if not user:
-            raise HTTPException(status_code=403, detail="Invalid email or password")
+            session_id = str(uuid.uuid4())
+            # Update session_id in DB (invalidate all other sessions)
+            cursor.execute(
+                "UPDATE USERS_APP SET session_id = %s WHERE id = %s",
+                (session_id, user['id'])
+            )
+            conn.commit()
 
-        if not verify_password(request.password, user['password_hash']):
-            raise HTTPException(status_code=403, detail="Invalid email or password")
+            access_token = create_access_token({
+                "user_id": user['id'],
+                "role": user['role'],
+                "session_id": session_id
+            })
 
-        access_token = create_access_token({
-            "user_id": user['id'],
-            "role": user['role']
-        })
+            refresh_token = create_refresh_token(user['id'], session_id)
 
-        refresh_token = create_refresh_token(user['id'])
-
-        return {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user['id'],
-                "email": user['email'],
-                "username": user.get('username', user['email']),
-                "role": user['role']
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": user['id'],
+                    "user_id": user.get('user_id'),
+                    "email": user['email'],
+                    "username": user.get('username', user['email']),
+                    "role": user['role'],
+                    "session_id": session_id
+                }
             }
-        }
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()

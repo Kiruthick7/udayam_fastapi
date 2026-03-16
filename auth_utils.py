@@ -22,6 +22,7 @@ def create_access_token(data: dict):
     if 'user_id' in to_encode:
         to_encode['sub'] = str(to_encode['user_id'])
         to_encode['role'] = to_encode.get('role', 'user')
+        # session_id should already be present
         del to_encode['user_id']
 
     to_encode.update({
@@ -38,13 +39,14 @@ def create_access_token(data: dict):
     )
 
 
-def create_refresh_token(user_id: int):
+def create_refresh_token(user_id: int, session_id: str):
     expire = datetime.utcnow() + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
     )
 
     payload = {
         "sub": str(user_id),
+        "session_id": session_id,
         "exp": expire,
         "type": "refresh",
         "iss": "trial-balance-api",
@@ -93,10 +95,19 @@ def verify_token(
             if payload.get("type") != "access":
                 raise HTTPException(status_code=401, detail="Invalid token type")
 
-            # Return token data with raw token
             user_id = payload.get("sub")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="Invalid token - missing user ID")
+            session_id = payload.get("session_id")
+            if not user_id or not session_id:
+                raise HTTPException(status_code=401, detail="Invalid token - missing user ID or session ID")
+
+            # Check session_id matches DB
+            cursor.execute(
+                "SELECT session_id FROM USERS_APP WHERE id = %s",
+                (int(user_id),)
+            )
+            row = cursor.fetchone()
+            if not row or row['session_id'] != session_id:
+                raise HTTPException(status_code=401, detail="Session invalidated. Please login again.")
 
             return {
                 "user_id": int(user_id),
