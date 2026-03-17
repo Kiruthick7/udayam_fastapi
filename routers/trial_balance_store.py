@@ -30,11 +30,10 @@ class CompanyReport(BaseModel):
 @router.post("/trial-balance-store")
 def get_trial_balance(
     request: TrialBalanceRequest,
-    current_user: dict = Depends(verify_token)
+    current_user: dict = Depends(verify_token),
+    conn=Depends(get_db)
 ):
-    conn = get_db()
     companies_data = []
-
     try:
         for company_code in request.companyIds:
             rows = []
@@ -98,5 +97,3 @@ def get_trial_balance(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-    finally:
-        conn.close()

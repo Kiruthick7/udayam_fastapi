@@ -126,7 +126,8 @@ class ProfitLossSummary(BaseModel):
 )
 async def get_sales_details(
     request: SalesDetailRequest,
-    token: str = Depends(verify_token)
+    token: str = Depends(verify_token),
+    conn=Depends(get_db)
 ):
     """
     Get complete sales details for a specific bill.
@@ -138,58 +139,53 @@ async def get_sales_details(
 
     **Requires authentication.**
     """
-    connection = None
-    cursor = None
-
     try:
-        connection = get_db()
-        cursor = connection.cursor(dictionary=True)
-
-        # Call stored procedure
-        cursor.callproc(
-            'get_customer_sales_full_details',
-            [request.billdate, request.billno, request.cuscod]
-        )
-
-        # Fetch results
-        results = []
-        for result in cursor.stored_results():
-            results = result.fetchall()
-
-        if not results:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No sales details found for the specified bill."
+        with conn.cursor(dictionary=True) as cursor:
+            # Call stored procedure
+            cursor.callproc(
+                'get_customer_sales_full_details',
+                [request.billdate, request.billno, request.cuscod]
             )
 
-        # Convert column names to lowercase for Pydantic
-        formatted_results = []
-        for row in results:
-            formatted_row = {
-                'billdate': row['DATE'],
-                'billno': row['BILLNO'],
-                'sno': row.get('SNO'),
-                'cuscod': row['CUSCOD'],
-                'cusnam': row.get('CUSNAM'),
-                'adrone': row.get('ADRONE'),
-                'adrtwo': row.get('ADRTWO'),
-                'phone': row.get('PHONE'),
-                'salmannam': row.get('SALMANNAM'),
-                'salmanphon': row.get('SALMANPHON'),
-                'managername': row.get('MANAGERNAME'),
-                'managerphon': row.get('MANAGERPHON'),
-                'name': row.get('NAME') or '',
-                'rate': float(row['RATE']) if row['RATE'] else 0.0,
-                'qty': float(row['QTY']) if row['QTY'] else 0.0,
-                'tprice': float(row['TPRICE']) if row['TPRICE'] else 0.0,
-                'prcostrate': float(row['PRCOSTRATE']) if row['PRCOSTRATE'] else 0.0,
-                'profit_loss': float(row['PROFIT_LOSS']) if row['PROFIT_LOSS'] else 0.0,
-                'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
-                'net': float(row['NET']) if row['NET'] else 0.0
-            }
-            formatted_results.append(formatted_row)
+            # Fetch results
+            results = []
+            for result in cursor.stored_results():
+                results = result.fetchall()
 
-        return formatted_results
+            if not results:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No sales details found for the specified bill."
+                )
+
+            # Convert column names to lowercase for Pydantic
+            formatted_results = []
+            for row in results:
+                formatted_row = {
+                    'billdate': row['DATE'],
+                    'billno': row['BILLNO'],
+                    'sno': row.get('SNO'),
+                    'cuscod': row['CUSCOD'],
+                    'cusnam': row.get('CUSNAM'),
+                    'adrone': row.get('ADRONE'),
+                    'adrtwo': row.get('ADRTWO'),
+                    'phone': row.get('PHONE'),
+                    'salmannam': row.get('SALMANNAM'),
+                    'salmanphon': row.get('SALMANPHON'),
+                    'managername': row.get('MANAGERNAME'),
+                    'managerphon': row.get('MANAGERPHON'),
+                    'name': row.get('NAME') or '',
+                    'rate': float(row['RATE']) if row['RATE'] else 0.0,
+                    'qty': float(row['QTY']) if row['QTY'] else 0.0,
+                    'tprice': float(row['TPRICE']) if row['TPRICE'] else 0.0,
+                    'prcostrate': float(row['PRCOSTRATE']) if row['PRCOSTRATE'] else 0.0,
+                    'profit_loss': float(row['PROFIT_LOSS']) if row['PROFIT_LOSS'] else 0.0,
+                    'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
+                    'net': float(row['NET']) if row['NET'] else 0.0
+                }
+                formatted_results.append(formatted_row)
+
+            return formatted_results
 
     except HTTPException:
         raise
@@ -198,15 +194,10 @@ async def get_sales_details(
             status_code=500,
             detail=f"Failed to fetch sales details: {str(e)}"
         )
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 
 @router.get("/current-day-customer-sales", response_model=List[DailySalesSummary])
-async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depends(verify_token)):
+async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depends(verify_token), conn=Depends(get_db)):
     """
     Get all sales orders for a specific date or current date if not provided.
     Returns a summary list without individual item details.
@@ -214,56 +205,45 @@ async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depen
     Args:
         date: Optional date in YYYY-MM-DD format. If not provided, uses current date.
     """
-    connection = None
-    cursor = None
-
     try:
-        # Get database connection
-        connection = get_db()
-        cursor = connection.cursor(dictionary=True)
+        with conn.cursor(dictionary=True) as cursor:
+            # Call stored procedure to get sales
+            cursor.callproc('get_customer_sales_details', [date])
 
-        # Call stored procedure to get sales
-        cursor.callproc('get_customer_sales_details', [date])
+            # Fetch results from the stored procedure
+            results = []
+            for result in cursor.stored_results():
+                results = result.fetchall()
 
-        # Fetch results from the stored procedure
-        results = []
-        for result in cursor.stored_results():
-            results = result.fetchall()
+            if not results:
+                return []  # Return empty list if no sales today
 
-        if not results:
-            return []  # Return empty list if no sales today
+            # Convert column names to lowercase for Pydantic
+            formatted_results = []
+            for row in results:
+                formatted_row = {
+                    'billdate': row['DATE'],
+                    'billno': row['BILLNO'],
+                    'sno': row.get('SNO'),
+                    'cuscod': row['CUSCOD'],
+                    'cusnam': row.get('CUSNAM'),
+                    'adrone': row.get('ADRONE'),
+                    'adrtwo': row.get('ADRTWO'),
+                    'phone': row.get('PHONE'),
+                    'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
+                    'net': float(row['NET']) if row['NET'] else 0.0,
+                    'total_profit': float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') else 0.0,
+                    'total_loss': float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') else 0.0
+                }
+                formatted_results.append(formatted_row)
 
-        # Convert column names to lowercase for Pydantic
-        formatted_results = []
-        for row in results:
-            formatted_row = {
-                'billdate': row['DATE'],
-                'billno': row['BILLNO'],
-                'sno': row.get('SNO'),
-                'cuscod': row['CUSCOD'],
-                'cusnam': row.get('CUSNAM'),
-                'adrone': row.get('ADRONE'),
-                'adrtwo': row.get('ADRTWO'),
-                'phone': row.get('PHONE'),
-                'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
-                'net': float(row['NET']) if row['NET'] else 0.0,
-                'total_profit': float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') else 0.0,
-                'total_loss': float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') else 0.0
-            }
-            formatted_results.append(formatted_row)
-
-        return formatted_results
+            return formatted_results
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch daily sales summary: {str(e)}"
         )
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
 
 
 @router.get(
@@ -272,7 +252,7 @@ async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depen
     summary="Get Daily Profit and Loss",
     description="Retrieve profit and loss summary for a specific date or today's sales"
 )
-async def get_profit_loss(date: Optional[str] = None, token: str = Depends(verify_token)):
+async def get_profit_loss(date: Optional[str] = None, token: str = Depends(verify_token), conn=Depends(get_db)):
     """
     Get profit and loss summary for a specific date or today's sales.
 
@@ -285,43 +265,116 @@ async def get_profit_loss(date: Optional[str] = None, token: str = Depends(verif
 
     **Requires authentication.**
     """
-    connection = None
-    cursor = None
-
     try:
-        connection = get_db()
-        cursor = connection.cursor(dictionary=True)
+        with conn.cursor(dictionary=True) as cursor:
+            # Call stored procedure with date parameter
+            cursor.callproc('get_profit_loss', [date])
 
-        # Call stored procedure with date parameter
-        cursor.callproc('get_profit_loss', [date])
+            # Fetch results
+            results = []
+            for result in cursor.stored_results():
+                results = result.fetchall()
 
-        # Fetch results
-        results = []
-        for result in cursor.stored_results():
-            results = result.fetchall()
+            if not results or len(results) == 0:
+                # Return zeros if no data
+                return {
+                    'total_profit': 0.0,
+                    'total_loss': 0.0
+                }
 
-        if not results or len(results) == 0:
-            # Return zeros if no data
-            return {
-                'total_profit': 0.0,
-                'total_loss': 0.0
+            row = results[0]
+            formatted_result = {
+                'total_profit': float(row['total_profit']) if row['total_profit'] else 0.0,
+                'total_loss': float(row['total_loss']) if row['total_loss'] else 0.0
             }
 
-        row = results[0]
-        formatted_result = {
-            'total_profit': float(row['total_profit']) if row['total_profit'] else 0.0,
-            'total_loss': float(row['total_loss']) if row['total_loss'] else 0.0
-        }
-
-        return formatted_result
+            return formatted_result
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch profit/loss data: {str(e)}"
+            detail=f"Failed to fetch profit and loss: {str(e)}"
         )
-    finally:
-        if cursor:
-            cursor.close()
-        if connection:
-            connection.close()
+
+
+# Response model for pending bills
+class PendingBill(BaseModel):
+    cuscod: str
+    bilnum: int
+    bildat: date
+    debit: float
+    credit: float
+    balance: float
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "cuscod": "B0020",
+                "bilnum": 12345,
+                "bildat": "2026-03-17",
+                "debit": 1000.0,
+                "credit": 200.0,
+                "balance": 800.0
+            }
+        }
+
+# Response model for summary
+class PendingBillSummary(BaseModel):
+    pending_bills: List[PendingBill]
+    total_balance: float
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "pending_bills": [
+                    {
+                        "cuscod": "B0020",
+                        "bilnum": 12345,
+                        "bildat": "2026-03-17",
+                        "debit": 1000.0,
+                        "credit": 200.0,
+                        "balance": 800.0
+                    }
+                ],
+                "total_balance": 5000.0
+            }
+        }
+
+# Endpoint to get pending bills for a customer as of a date
+@router.get(
+    "/customer-pending-bills",
+    response_model=PendingBillSummary,
+    summary="Get Customer Pending Bills",
+    description="Retrieve all bills for a customer with pending (positive) balance as of a given date."
+)
+async def get_customer_pending_bills(
+    cuscod: str,
+    mfdate: date,
+    token: str = Depends(verify_token),
+    conn=Depends(get_db)
+):
+    try:
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.callproc('get_customer_pending_bills', [cuscod, mfdate])
+            results = []
+            for result in cursor.stored_results():
+                results = result.fetchall()
+            if not results:
+                return {"pending_bills": [], "total_balance": 0.0}
+            formatted_results = []
+            total_balance = 0.0
+            for row in results:
+                formatted_results.append({
+                    'cuscod': row['CUSCOD'],
+                    'bilnum': row['BILNUM'],
+                    'bildat': row['BILDAT'],
+                    'debit': float(row['DEBIT']) if row['DEBIT'] else 0.0,
+                    'credit': float(row['CREDIT']) if row['CREDIT'] else 0.0,
+                    'balance': float(row['BALANCE']) if row['BALANCE'] else 0.0
+                })
+                # Only set total_balance from the first row (since it's the same for all)
+                if 'TOTAL_BALANCE' in row and total_balance == 0.0:
+                    total_balance = float(row['TOTAL_BALANCE']) if row['TOTAL_BALANCE'] else 0.0
+            return {"pending_bills": formatted_results, "total_balance": total_balance}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch pending bills: {str(e)}")

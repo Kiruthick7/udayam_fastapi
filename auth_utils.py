@@ -122,7 +122,6 @@ def verify_token(
             raise HTTPException(status_code=401, detail="Invalid token")
     finally:
         cursor.close()
-        conn.close()
 
 
 def hash_password(password: str) -> str:

@@ -87,4 +87,8 @@ def get_db_pool():
 
 
 def get_db():
-    return get_db_pool().get_connection()
+    conn = get_db_pool().get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()

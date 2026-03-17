@@ -1,12 +1,39 @@
 from fastapi import FastAPI, Request, Response
-from routers import auth, companies, trial_balance_store, trial_balance, logout, sales_details
+import logging
+import os
+import boto3
+from routers import auth, companies, trial_balance_store, trial_balance, logout, sales_details, auth_check
 from mangum import Mangum
 
 app = FastAPI(
     title="Trial Balance API",
     description="Multi-company trial balance reporting API",
-    version="1.0.0"
+    version="2.0.0"
 )
+
+# SNS and crash logging setup
+SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN")  # Set this in Lambda env vars if using SNS
+if SNS_TOPIC_ARN:
+    sns_client = boto3.client("sns")
+else:
+    sns_client = None
+
+# Crash logging endpoint
+@app.post("/log-error")
+async def log_error(request: Request):
+    data = await request.json()
+    logging.error(f"APP CRASH REPORT: {data}")
+
+    # Example: Alert if error contains critical keywords
+    error_message = str(data.get("error", ""))
+    if sns_client and SNS_TOPIC_ARN:
+        if "null value" in error_message.lower() or "critical" in error_message.lower():
+            sns_client.publish(
+                TopicArn=SNS_TOPIC_ARN,
+                Subject="🚨 App Crash Alert",
+                Message=f"Critical error reported:\n\n{data}"
+            )
+    return {"success": True}
 
 handler = Mangum(app, lifespan="off")
 
@@ -31,6 +58,7 @@ app.include_router(trial_balance.router)
 app.include_router(trial_balance_store.router)
 app.include_router(sales_details.router)
 app.include_router(logout.router)
+app.include_router(auth_check.router)
 
 @app.get("/")
 def root():

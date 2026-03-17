@@ -15,26 +15,25 @@ class Company(BaseModel):
     SDGRPCOD: str
 
 @router.get("/companies", response_model=List[Company])
-def get_companies(current_user: dict = Depends(verify_token)):
-    with get_db() as conn:
-        with conn.cursor(dictionary=True) as cursor:
-            query = """
-                SELECT
-                    SNO_ID,
-                    COALESCE(FIRCOD_ID, '') as FIRCOD_ID,
-                    COALESCE(FIRCOD, '') as FIRCOD,
-                    FIRNAME,
-                    COALESCE(SCGRPCOD, '') as SCGRPCOD,
-                    COALESCE(SDGRPCOD, '') as SDGRPCOD
-                FROM FIRMASN
-                WHERE FIRCOD IS NOT NULL
-                AND FIRCOD != ''
-                AND FIRNAME IS NOT NULL
-                AND FIRNAME != ''
-                ORDER BY SNO_ID
-            """
+def get_companies(current_user: dict = Depends(verify_token), conn=Depends(get_db)):
+    with conn.cursor(dictionary=True) as cursor:
+        query = """
+            SELECT
+                SNO_ID,
+                COALESCE(FIRCOD_ID, '') as FIRCOD_ID,
+                COALESCE(FIRCOD, '') as FIRCOD,
+                FIRNAME,
+                COALESCE(SCGRPCOD, '') as SCGRPCOD,
+                COALESCE(SDGRPCOD, '') as SDGRPCOD
+            FROM FIRMASN
+            WHERE FIRCOD IS NOT NULL
+            AND FIRCOD != ''
+            AND FIRNAME IS NOT NULL
+            AND FIRNAME != ''
+            ORDER BY SNO_ID
+        """
 
-            cursor.execute(query)
-            companies = cursor.fetchall()
+        cursor.execute(query)
+        companies = cursor.fetchall()
 
-            return companies
+        return companies

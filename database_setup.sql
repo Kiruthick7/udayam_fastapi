@@ -736,6 +736,38 @@ DELIMITER ;
 
 CALL get_customer_sales_details();
 
+-- Step 5A: Create stored procedure for customer pending bills
+DELIMITER $$
+DROP PROCEDURE IF EXISTS get_customer_pending_bills $$
+CREATE PROCEDURE get_customer_pending_bills (
+    IN p_cuscod VARCHAR(10),
+    IN p_mfdate DATE
+)
+BEGIN
+    SELECT
+        I.CUSCOD,
+        I.BILNUM,
+        I.BILDAT,
+        SUM(CASE WHEN I.DBCR = 'D' THEN I.TRNAMT ELSE 0 END) AS DEBIT,
+        SUM(CASE WHEN I.DBCR = 'C' THEN I.TRNAMT ELSE 0 END) AS CREDIT,
+        SUM(CASE WHEN I.DBCR = 'D' THEN I.TRNAMT ELSE -I.TRNAMT END) AS BALANCE,
+        SUM(SUM(CASE WHEN I.DBCR = 'D' THEN I.TRNAMT ELSE -I.TRNAMT END)) OVER (PARTITION BY I.CUSCOD) AS TOTAL_BALANCE
+    FROM INVOCE I
+    WHERE
+        I.CUSCOD = p_cuscod
+        AND I.TRNDAT <= p_mfdate
+    GROUP BY
+        I.CUSCOD,
+        I.BILNUM,
+        I.BILDAT
+    HAVING
+        BALANCE > 0
+    ORDER BY
+        I.BILDAT,
+        I.BILNUM;
+END $$
+DELIMITER ;
+
 -- Step 6: Create stored procedure for customer detials & item details of current day sales details
 
 DELIMITER $$
