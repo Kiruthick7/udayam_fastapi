@@ -8,6 +8,7 @@ from auth_utils import verify_token
 router = APIRouter(prefix="/api", tags=["Sales Details"])
 
 class DailySalesSummary(BaseModel):
+
     """Daily sales summary for a bill"""
     billdate: date = Field(..., description="Sales date")
     billno: int = Field(..., description="Bill number")
@@ -117,6 +118,10 @@ class ProfitLossSummary(BaseModel):
             }
         }
 
+class SalesSummaryResponse(BaseModel):
+    regular_sales: List[DailySalesSummary]
+    shop_sales: List[DailySalesSummary]
+
 
 @router.post(
     "/sales-details",
@@ -126,7 +131,7 @@ class ProfitLossSummary(BaseModel):
 )
 async def get_sales_details(
     request: SalesDetailRequest,
-    token: str = Depends(verify_token),
+    token: dict = Depends(verify_token),
     conn=Depends(get_db)
 ):
     """
@@ -142,15 +147,21 @@ async def get_sales_details(
     try:
         with conn.cursor(dictionary=True) as cursor:
             # Call stored procedure
-            cursor.callproc(
-                'get_customer_sales_full_details',
-                [request.billdate, request.billno, request.cuscod]
-            )
+            if token["role"] == "admin":
+                cursor.callproc(
+                    'get_customer_sales_full_details',
+                    [request.billdate, request.billno, request.cuscod]
+                )
+            else:
+                cursor.callproc(
+                    'get_customer_sales_full_details_shop',
+                    [request.billdate, request.billno, request.cuscod]
+                )
 
             # Fetch results
             results = []
             for result in cursor.stored_results():
-                results = result.fetchall()
+                results.extend(result.fetchall())
 
             if not results:
                 raise HTTPException(
@@ -196,7 +207,7 @@ async def get_sales_details(
         )
 
 
-@router.get("/current-day-customer-sales", response_model=List[DailySalesSummary])
+@router.get("/current-day-customer-sales", response_model=SalesSummaryResponse)
 async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depends(verify_token), conn=Depends(get_db)):
     """
     Get all sales orders for a specific date or current date if not provided.
@@ -205,39 +216,44 @@ async def get_daily_sales_summary(date: Optional[str] = None, token: str = Depen
     Args:
         date: Optional date in YYYY-MM-DD format. If not provided, uses current date.
     """
+
+
     try:
         with conn.cursor(dictionary=True) as cursor:
-            # Call stored procedure to get sales
+            # Regular sales
             cursor.callproc('get_customer_sales_details', [date])
-
-            # Fetch results from the stored procedure
-            results = []
+            results1 = []
             for result in cursor.stored_results():
-                results = result.fetchall()
+                results1 = result.fetchall()
+            # Shop sales
+            cursor.callproc('get_shop_customer_sales_details', [date, None])
+            results2 = []
+            for result in cursor.stored_results():
+                results2 = result.fetchall()
 
-            if not results:
-                return []  # Return empty list if no sales today
+            def format_rows(rows):
+                formatted = []
+                for row in rows:
+                    formatted.append(DailySalesSummary(
+                        billdate=row['DATE'],
+                        billno=row['BILLNO'],
+                        sno=row.get('SNO'),
+                        cuscod=row['CUSCOD'],
+                        cusnam=row.get('CUSNAM'),
+                        adrone=row.get('ADRONE'),
+                        adrtwo=row.get('ADRTWO'),
+                        phone=row.get('PHONE'),
+                        tqty=float(row['TQTY']) if row.get('TQTY') is not None else 0.0,
+                        net=float(row['NET']) if row.get('NET') is not None else 0.0,
+                        total_profit=float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') is not None else 0.0,
+                        total_loss=float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') is not None else 0.0
+                    ))
+                return formatted
 
-            # Convert column names to lowercase for Pydantic
-            formatted_results = []
-            for row in results:
-                formatted_row = {
-                    'billdate': row['DATE'],
-                    'billno': row['BILLNO'],
-                    'sno': row.get('SNO'),
-                    'cuscod': row['CUSCOD'],
-                    'cusnam': row.get('CUSNAM'),
-                    'adrone': row.get('ADRONE'),
-                    'adrtwo': row.get('ADRTWO'),
-                    'phone': row.get('PHONE'),
-                    'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
-                    'net': float(row['NET']) if row['NET'] else 0.0,
-                    'total_profit': float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') else 0.0,
-                    'total_loss': float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') else 0.0
-                }
-                formatted_results.append(formatted_row)
-
-            return formatted_results
+            return SalesSummaryResponse(
+                regular_sales=format_rows(results1),
+                shop_sales=format_rows(results2)
+            )
 
     except Exception as e:
         raise HTTPException(
@@ -378,3 +394,52 @@ async def get_customer_pending_bills(
             return {"pending_bills": formatted_results, "total_balance": total_balance}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch pending bills: {str(e)}")
+
+@router.get("/current-day-customer-sales-shop", response_model=List[DailySalesSummary])
+async def get_daily_sales_summary_shop(
+    date: Optional[str] = None,
+    user_id: Optional[float] = None,
+    token: str = Depends(verify_token),
+    conn=Depends(get_db)
+):
+    """
+    Get all sales orders for a specific date or current date if not provided, filtered by user_id if given.
+    Returns a summary list without individual item details.
+    """
+    try:
+
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.callproc('get_shop_customer_sales_details', [date, user_id])
+
+            results = []
+            for result in cursor.stored_results():
+                results = result.fetchall()
+
+            if not results:
+                return []
+
+            formatted_results = []
+            for row in results:
+                formatted_row = {
+                    'billdate': row['DATE'],
+                    'billno': row['BILLNO'],
+                    'sno': row.get('SNO'),
+                    'cuscod': row['CUSCOD'],
+                    'cusnam': row.get('CUSNAM'),
+                    'adrone': row.get('ADRONE'),
+                    'adrtwo': row.get('ADRTWO'),
+                    'phone': row.get('PHONE'),
+                    'tqty': float(row['TQTY']) if row['TQTY'] else 0.0,
+                    'net': float(row['NET']) if row['NET'] else 0.0,
+                    'total_profit': float(row.get('TOTAL_PROFIT', 0)) if row.get('TOTAL_PROFIT') else 0.0,
+                    'total_loss': float(row.get('TOTAL_LOSS', 0)) if row.get('TOTAL_LOSS') else 0.0
+                }
+                formatted_results.append(formatted_row)
+
+            return formatted_results
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch daily sales summary (shop): {str(e)}"
+        )

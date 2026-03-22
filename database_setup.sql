@@ -768,6 +768,70 @@ BEGIN
 END $$
 DELIMITER ;
 
+-- Step 5B: Create stored procedure for current-day-customer-sales-shop (with user_id filter and profit/loss)
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS get_shop_customer_sales_details $$
+
+CREATE PROCEDURE get_shop_customer_sales_details (
+    IN p_date DATE,
+    IN p_user_id DECIMAL(4,1)
+)
+BEGIN
+    SELECT
+        s.sno_id,
+        s.DATE,
+        s.TIME,
+        s.BS_CSCR,
+        s.BILLNO,
+        s.SNO,
+        s.TOTAMT AS TQTY,
+        s.CUSC AS CUSCOD,
+        s.CUSNAM,
+        s.NETAMT AS NET,
+        s.GST0SAL, s.GST5SAL, s.GST5, s.GST12SAL, s.GST12, s.GST18SAL, s.GST18, s.GST28SAL, s.GST28,
+        s.IDNO, s.SALMANCOD, s.FLD1, s.GSTIGST, s.DISCP, s.DAMT, s.CASHAMT, s.CARDAMT, s.BALAMT, s.USERID, s.PAISE, s.FIRCOD,
+
+        c.ADRONE,
+        c.ADRTWO,
+        c.PHONE,
+
+        COALESCE((
+            SELECT SUM(CASE
+                WHEN (d.QTY * d.SALRATE) - (d.QTY * d.COSTRATE) > 0
+                THEN (d.QTY * d.SALRATE) - (d.QTY * d.COSTRATE)
+                ELSE 0
+            END)
+            FROM SHOPSALDET d
+            WHERE d.BILLNO = s.BILLNO
+              AND d.DATE = s.DATE
+        ), 0) AS TOTAL_PROFIT,
+
+        COALESCE((
+            SELECT SUM(CASE
+                WHEN (d.QTY * d.SALRATE) - (d.QTY * d.COSTRATE) < 0
+                THEN ABS((d.QTY * d.SALRATE) - (d.QTY * d.COSTRATE))
+                ELSE 0
+            END)
+            FROM SHOPSALDET d
+            WHERE d.BILLNO = s.BILLNO
+              AND d.DATE = s.DATE
+        ), 0) AS TOTAL_LOSS
+
+    FROM SHOPSALTOT s
+
+    LEFT JOIN SHOPCUSMAS c
+        ON c.CUSCOD = s.CUSC   -- matching customer code
+
+    WHERE s.DATE = COALESCE(p_date, CURDATE())
+      AND (p_user_id IS NULL OR s.USERID = p_user_id)
+
+    ORDER BY s.sno_id DESC;
+
+END $$
+
+DELIMITER ;
+
 -- Step 6: Create stored procedure for customer detials & item details of current day sales details
 
 DELIMITER $$
@@ -884,3 +948,49 @@ DELIMITER ;
 SELECT DATE(
     CONVERT_TZ(NOW(), @@session.time_zone, '+05:30')
 ) AS current_date_ist;
+
+-- Procedure: get_customer_sales_full_details_shop
+DELIMITER $$
+
+DROP PROCEDURE IF EXISTS get_customer_sales_full_details_shop $$
+
+CREATE PROCEDURE get_customer_sales_full_details_shop(
+    IN p_billdate DATE,
+    IN p_billno INT,
+    IN p_cuscod VARCHAR(10)
+)
+BEGIN
+    SELECT
+        t.DATE AS DATE,
+        t.BILLNO,
+        d.SNO,
+        t.CUSC AS CUSCOD,
+
+        -- Customer info
+        c.CUSNAM,
+        c.ADRONE,
+        c.ADRTWO,
+        c.PHONE,
+
+        -- Item details
+        d.NAME,
+        d.SALRATE AS RATE,
+        d.QTY,
+        d.TPRICE,
+        d.COSTRATE AS PRCOSTRATE,
+        ((d.SALRATE - d.COSTRATE) * d.QTY) AS PROFIT_LOSS,
+
+        -- Totals
+        t.TOTAMT AS TQTY,
+        t.NETAMT AS NET
+
+    FROM SHOPSALTOT t
+    JOIN SHOPSALDET d ON t.BILLNO = d.BILLNO AND t.DATE = d.DATE
+    JOIN SHOPCUSMAS c ON t.CUSC = c.CUSCOD
+    WHERE t.DATE = p_billdate
+      AND t.BILLNO = p_billno
+      AND t.CUSC = p_cuscod
+    ORDER BY d.SNO;
+END$$
+
+DELIMITER ;

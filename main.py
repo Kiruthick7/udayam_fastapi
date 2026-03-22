@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, Response
 import logging
 import os
 import boto3
-from routers import auth, companies, trial_balance_store, trial_balance, logout, sales_details, auth_check
+from routers import auth, companies, trial_balance_store, trial_balance, logout, sales_details, auth_check, token
 from mangum import Mangum
 
 app = FastAPI(
@@ -59,6 +59,7 @@ app.include_router(trial_balance_store.router)
 app.include_router(sales_details.router)
 app.include_router(logout.router)
 app.include_router(auth_check.router)
+app.include_router(token.router)
 
 @app.get("/")
 def root():
@@ -71,7 +72,10 @@ def root():
             "companies": "/api/companies",
             "trial_balance": "/api/trial-balance",
             "trial_balance_store": "/api/trial-balance-store",
-            "sales_details": "/api/sales-details"
+            "sales_details": "/api/sales-details",
+            "refresh_token": "/auth/refresh",
+            "logout": "/auth/logout",
+            "auth_check": "/auth/check"
         }
     }
 
