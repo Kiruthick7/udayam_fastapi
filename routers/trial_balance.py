@@ -26,6 +26,17 @@ class CompanyReport(BaseModel):
     period: dict
     rows: List[TrialBalanceRow]
 
+
+def _fetch_stored_proc_rows(cursor, procedure_name: str, params: list):
+    cursor.callproc(procedure_name, params)
+
+    results = []
+    for result in cursor.stored_results():
+        results.extend(result.fetchall())
+        result.close()
+
+    return results
+
 @router.post("/trial-balance")
 def get_trial_balance(
     request: TrialBalanceRequest,
@@ -51,45 +62,41 @@ def get_trial_balance(
                 scgrpcod = company_info["SCGRPCOD"] or ""
                 sdgrpcod = company_info["SDGRPCOD"] or ""
 
-                # Call stored procedure with company-specific codes
-                cursor.callproc(
+                proc_rows = _fetch_stored_proc_rows(
+                    cursor,
                     "get_trial_balance_shop",
-                    [company_code, scgrpcod, sdgrpcod, request.startDate, request.endDate]
+                    [company_code, scgrpcod, sdgrpcod, request.startDate, request.endDate],
                 )
 
-                # Commit the transaction to persist TRUNCATE/INSERT operations
-                conn.commit()
+                for row in proc_rows:
+                    category = row.get("category")
+                    amount = float(row.get("amount") or 0)
+                    acc_type = row.get("type")
 
-                for result in cursor.stored_results():
-                    for row in result.fetchall():
-                        category = row.get("category")
-                        amount = float(row.get("amount") or 0)
-                        acc_type = row.get("type")
+                    debit = credit = balance = 0.0
 
-                        debit = credit = balance = 0.0
-
-                        if acc_type == "ASSET":
-                            debit = amount
+                    if acc_type == "ASSET":
+                        debit = amount
+                        balance = amount
+                    elif acc_type == "LIABILITY":
+                        credit = amount
+                        if category == "NET TOTAL":
+                            balance = -abs(amount)
+                        else:
                             balance = amount
-                        elif acc_type == "LIABILITY":
-                            credit = amount
-                            if category == "NET TOTAL":
-                                balance = -abs(amount)
-                            else:
-                                balance = amount
-                        elif acc_type == "NET":
-                            if amount >= 0:
-                                balance = amount   # Profit
-                            else:
-                                balance = -abs(amount)  # Loss
+                    elif acc_type == "NET":
+                        if amount >= 0:
+                            balance = amount   # Profit
+                        else:
+                            balance = -abs(amount)  # Loss
 
-                        rows.append({
-                            "accountName": category,
-                            "accountType": acc_type,
-                            "debit": debit,
-                            "credit": credit,
-                            "balance": balance
-                        })
+                    rows.append({
+                        "accountName": category,
+                        "accountType": acc_type,
+                        "debit": debit,
+                        "credit": credit,
+                        "balance": balance
+                    })
 
                 companies_data.append({
                     "companyId": company_code,
@@ -103,4 +110,8 @@ def get_trial_balance(
 
         return {"companies": companies_data}
     except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

@@ -11,8 +11,23 @@ SHOW INDEX FROM SHOPINVESTMENT;
 -- Drop existing indexes if they exist
 DROP INDEX idx_daybuk_main ON DAYBUK;
 DROP INDEX idx_daybuk_cash ON DAYBUK;
+DROP INDEX idx_daybuk_grp_trndat ON DAYBUK;
+DROP INDEX idx_daybuk_cuscod_trndat ON DAYBUK;
+DROP INDEX idx_daybuk_jrt ON DAYBUK;
 DROP INDEX idx_stock ON SHOPSTKGODOWN;
 DROP INDEX idx_invest ON SHOPINVESTMENT;
+DROP INDEX idx_prcusmas_bank ON PRCUSMAS;
+DROP INDEX idx_stkmas_root ON STKMAS;
+DROP INDEX idx_payattend_cuscod_date ON PAYATTEND;
+DROP INDEX idx_paystaffmas_type_dor ON PAYSTAFFMAS;
+DROP INDEX idx_prstkm_itec ON PRSTKMAS;
+DROP INDEX idx_prpurdet_itec ON PRPURDET;
+DROP INDEX idx_prsaldet_itec ON PRSALDET;
+DROP INDEX idx_prpackstru_itec ON PRPACKSTRU;
+DROP INDEX idx_saltot_bill ON SALTOT;
+DROP INDEX idx_saldet_bill ON SALDET;
+DROP INDEX idx_cusmas_cuscod ON CUSMAS;
+
 
 -- Create index normally
 CREATE INDEX idx_daybuk_main ON DAYBUK (comp, GRPCOD, TRNDAT, DBCR);
@@ -734,7 +749,7 @@ END $$
 
 DELIMITER ;
 
-CALL get_customer_sales_details();
+-- CALL get_customer_sales_details();
 
 -- Step 5A: Create stored procedure for customer pending bills
 DELIMITER $$
@@ -945,9 +960,9 @@ DELIMITER ;
 -- CALL get_profit_loss();
 
 -- SHOW CURRENT DATE OF IST;
-SELECT DATE(
-    CONVERT_TZ(NOW(), @@session.time_zone, '+05:30')
-) AS current_date_ist;
+-- SELECT DATE(
+--     CONVERT_TZ(NOW(), @@session.time_zone, '+05:30')
+-- ) AS current_date_ist;
 
 -- Procedure: get_customer_sales_full_details_shop
 DELIMITER $$
